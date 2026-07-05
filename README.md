@@ -104,5 +104,4 @@ files this size.
 
 ## License
 
-MPL-2.0 (so we can reuse code from `penpot-exporter-figma-plugin` and stay aligned
-with `@penpot/library`).
+MPL-2.0
