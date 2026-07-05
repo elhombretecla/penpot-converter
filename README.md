@@ -170,14 +170,6 @@ Key third-party pieces: `kiwi-schema` (official Kiwi decoder),
 `@penpot/library` (official .penpot builder from the Penpot team),
 `fflate` + `fzstd` (decompression).
 
-## Performance
-
-Reference numbers on a desktop Linux box (Node 22): Codex.fig (18 MB, 105k
-shapes) converts in ~2 min; Design System CYGNUS.fig (49 MB, 209k shapes) in
-~7 min with a ~4.5 GB peak (the build context of `@penpot/library` holds the
-whole file in memory before streaming the zip). The browser plugin dies on
-files this size.
-
 ## License
 
 MPL-2.0
