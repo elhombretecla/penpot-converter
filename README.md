@@ -1,15 +1,7 @@
-# fig2penpot
+# Penpot Converter
 
 Local CLI that converts Figma `.fig` files ("Save local copy") into Penpot `.penpot` files —
 no browser involved and none of the memory limits of the export plugin.
-
-Status: **Phase 5** — everything from phases 1–4 (components, instances,
-overrides, variants, component properties, variables/design tokens) plus
-multi-file bundles: several .fig files convert into ONE .penpot where earlier
-files act as shared libraries — external component copies are matched back to
-the real components (manifest `relations`, cross-file `componentFile`/`shapeRef`
-links, per-file id namespaces) and prototype interactions (which the official
-plugin does not export at all). Research and roadmap: [`RESEARCH.md`](./RESEARCH.md).
 
 ## Usage
 
@@ -74,10 +66,6 @@ npx tsx src/cli.ts hello -o hello.penpot
 - Prototype interactions: click/press/hover/enter/leave/after-delay events with
   navigate (+dissolve/slide/push animations), overlay, back and open-url
   actions; component state swaps (SWAP_STATE) have no Penpot equivalent
-
-Not yet: grid layout, shared styles as library colors/typographies (style definitions live outside the .fig when they come
-from external libraries), linking against an ALREADY-imported Penpot file
-(bundle the .fig files together instead).
 
 ## Architecture (src/)
 
