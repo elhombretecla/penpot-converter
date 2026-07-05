@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+*.log
+
+# Local design-file test assets (large, proprietary). Keep your .fig samples
+# here; converter outputs default to out/.
+sample-files/

@@ -1,0 +1,42 @@
+{
+  "name": "fig2penpot",
+  "version": "0.1.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MPL-2.0",
+  "description": "Local CLI to convert Figma .fig files to Penpot .penpot files",
+  "type": "module",
+  "bin": {
+    "fig2penpot": "./dist/cli.js"
+  },
+  "dependencies": {
+    "@penpot/library": "^1.2.0-RC2",
+    "commander": "^15.0.0",
+    "fflate": "^0.8.3",
+    "fzstd": "^0.1.1",
+    "kiwi-schema": "^0.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elhombretecla/penpot-converter.git"
+  },
+  "homepage": "https://github.com/elhombretecla/penpot-converter#readme",
+  "bugs": {
+    "url": "https://github.com/elhombretecla/penpot-converter/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
