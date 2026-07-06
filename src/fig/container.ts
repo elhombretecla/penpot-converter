@@ -3,6 +3,8 @@ import { decompress as zstdDecompress } from 'fzstd';
 
 /**
  * Low-level access to a Figma "save local copy" file.
+ * Covers design files (.fig) and Slides presentations (.deck) — a .deck is
+ * the same container with a fig-deck magic in its canvas.fig.
  *
  * A modern .fig is a ZIP wrapping:
  *   canvas.fig       -> the fig-kiwi binary (schema + data chunks)
@@ -25,7 +27,7 @@ export interface FigContainer {
   images: Map<string, Uint8Array>;
 }
 
-const KNOWN_MAGICS = ['fig-kiwi', 'fig-jam.', 'fig-make'];
+const KNOWN_MAGICS = ['fig-kiwi', 'fig-jam.', 'fig-make', 'fig-deck'];
 const ZSTD_MAGIC = [0x28, 0xb5, 0x2f, 0xfd];
 
 function isZip(buf: Uint8Array): boolean {

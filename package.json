@@ -11,7 +11,7 @@
   "keywords": [],
   "author": "",
   "license": "MPL-2.0",
-  "description": "Local CLI to convert Figma .fig files to Penpot .penpot files",
+  "description": "Local CLI to convert Figma .fig files and .deck presentations to Penpot .penpot files",
   "type": "module",
   "bin": {
     "fig2penpot": "./dist/cli.js"

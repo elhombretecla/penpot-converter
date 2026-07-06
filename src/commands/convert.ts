@@ -537,9 +537,17 @@ class Converter {
   private subtreeConvertible(entry: FigNode, src: FileSource): boolean {
     const node = entry.node;
     const type = node.type ?? '';
-    if (type === 'FRAME' || type === 'SECTION' || type === 'SYMBOL') {
+    if (type === 'FRAME' || type === 'SECTION' || type === 'SYMBOL' || type === 'SLIDE') {
       if (node['resizeToFit']) return entry.children.some((c) => this.subtreeConvertible(c, src));
       return true; // boards carry their own geometry, empty is fine
+    }
+    if (type === 'SLIDE_GRID' || type === 'SLIDE_ROW' || type === 'MODULE') {
+      return entry.children.some((c) => this.subtreeConvertible(c, src));
+    }
+    if (type === 'SHAPE_WITH_TEXT') {
+      return Boolean(
+        (node['derivedImmutableFrameData'] as { overrides?: unknown[] } | undefined)?.overrides?.length,
+      );
     }
     if (type === 'INSTANCE') {
       const symbolGuid = (node['symbolData'] as { symbolID?: Guid } | undefined)?.symbolID;
@@ -561,7 +569,8 @@ class Converter {
       type === 'RECTANGLE' ||
       type === 'ROUNDED_RECTANGLE' ||
       type === 'ELLIPSE' ||
-      type === 'LINE'
+      type === 'LINE' ||
+      type === 'INTERACTIVE_SLIDE_ELEMENT'
     );
   }
 
@@ -719,9 +728,19 @@ class Converter {
 
     try {
       switch (type) {
+        case 'SLIDE_GRID':
+        case 'SLIDE_ROW':
+        case 'MODULE': {
+          // Figma Slides scaffolding: purely positional wrappers around each
+          // SLIDE (a MODULE is a 1:1 wrapper, rows/grid only place them on the
+          // canvas). No shape is emitted; children keep their absolute spot.
+          this.visitChildren(entry.children, abs, node, exp, insideComponent);
+          break;
+        }
         case 'FRAME':
         case 'SECTION':
-        case 'SYMBOL': {
+        case 'SYMBOL':
+        case 'SLIDE': {
           if (node['resizeToFit']) {
             // A frame with resizeToFit is what the Figma UI calls a group.
             if (!entry.children.some((c) => this.subtreeConvertible(c, src))) {
@@ -774,14 +793,17 @@ class Converter {
           break;
         }
         case 'RECTANGLE':
-        case 'ROUNDED_RECTANGLE': {
+        case 'ROUNDED_RECTANGLE':
+        // Polls, embeds, facepiles… arrive with an IMAGE fill snapshot, so a
+        // plain rect preserves their rendered look.
+        case 'INTERACTIVE_SLIDE_ELEMENT': {
           this.ctx.addRect({
             ...this.commonAttrs(node, abs, src, parentNode),
             ...this.styleAttrs(node, src),
             ...this.nodeIds(node, exp),
             ...touchedAttr,
           });
-          bump(this.stats.converted, 'RECTANGLE');
+          bump(this.stats.converted, type === 'INTERACTIVE_SLIDE_ELEMENT' ? type : 'RECTANGLE');
           break;
         }
         case 'ELLIPSE': {
@@ -820,6 +842,10 @@ class Converter {
         case 'REGULAR_POLYGON':
         case 'HIGHLIGHT': {
           this.convertPathNode(node, abs, parentNode, exp, touchedAttr, src);
+          break;
+        }
+        case 'SHAPE_WITH_TEXT': {
+          this.convertShapeWithText(node, abs, parentNode, exp, touchedAttr, src);
           break;
         }
         case 'TEXT': {
@@ -1246,6 +1272,83 @@ class Converter {
     }
     bump(this.stats.converted, type);
   }
+
+  /**
+   * FigJam-style "shape with text" (Slides decks use them for stickers and
+   * small callouts). The node itself carries no geometry or text: the rendered
+   * result lives in derivedImmutableFrameData.overrides as a synthetic subtree
+   * — one override with baked fill/stroke geometry for the shape, and one text
+   * override. Shape overrides merge into a single synthetic vector node run
+   * through the normal path pipeline; the text override only converts when it
+   * actually has characters.
+   */
+  private convertShapeWithText(
+    node: NodeChange,
+    abs: FigMatrix,
+    parentNode: NodeChange,
+    exp: Expansion | undefined,
+    touchedAttr: Record<string, unknown>,
+    src: FileSource,
+  ): void {
+    const overrides = (node['derivedImmutableFrameData'] as
+      | { overrides?: Record<string, unknown>[] }
+      | undefined)?.overrides;
+    const fillGeometry: unknown[] = [];
+    const strokeGeometry: unknown[] = [];
+    let shapeTransform: FigMatrix = IDENTITY;
+    let textNode: NodeChange | undefined;
+
+    for (const override of overrides ?? []) {
+      const textData = override['textData'] as { characters?: string } | undefined;
+      if (textData || override['derivedTextData']) {
+        // The text sub-node (its strokeGeometry is glyph outlines, not shape).
+        if (textData?.characters) textNode = { ...node, ...override, type: 'TEXT' } as NodeChange;
+        continue;
+      }
+      const fills = (override['fillGeometry'] as unknown[] | undefined) ?? [];
+      const strokes = (override['strokeGeometry'] as unknown[] | undefined) ?? [];
+      if (fills.length || strokes.length) {
+        if (!fillGeometry.length && !strokeGeometry.length) {
+          shapeTransform = (override['transform'] as FigMatrix | undefined) ?? IDENTITY;
+        }
+        fillGeometry.push(...fills);
+        strokeGeometry.push(...strokes);
+      }
+    }
+
+    if (!fillGeometry.length && !strokeGeometry.length && !textNode) {
+      bump(this.stats.skipped, 'SHAPE_WITH_TEXT (no geometry)');
+      return;
+    }
+
+    if (fillGeometry.length || strokeGeometry.length) {
+      const synthetic = {
+        ...node,
+        fillGeometry,
+        strokeGeometry,
+        // Shapes usually inherit their fill from the FigJam/Slides theme
+        // (styleIdForFill), which is not in the file; white is FigJam's default.
+        ...(node['fillPaints']
+          ? {}
+          : { fillPaints: [{ type: 'SOLID', color: { r: 1, g: 1, b: 1, a: 1 }, opacity: 1, visible: true }] }),
+      } as NodeChange;
+      this.convertPathNode(synthetic, compose(abs, shapeTransform), parentNode, exp, touchedAttr, src);
+    }
+
+    if (textNode) {
+      const text = convertText(textNode, this.imageResolverFor(src), this.stats.missingFonts, this.varResolverFor(src));
+      if (text) {
+        const textAbs = compose(abs, (textNode['transform'] as FigMatrix | undefined) ?? IDENTITY);
+        this.ctx.addText({
+          ...this.commonAttrs(textNode, textAbs, src, node),
+          ...this.nodeIds(node, exp, 'T'),
+          content: text.content,
+          growType: text.growType,
+        });
+        bump(this.stats.converted, 'SHAPE_WITH_TEXT (text)');
+      }
+    }
+  }
 }
 
 export interface ConvertOptions {
@@ -1386,8 +1489,11 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
     stripDerivedRenderData(message.nodeChanges ?? []);
     const tree = buildTree(message);
 
+    // Slides exports often carry file_name "Untitled" in meta.json; the input
+    // file name is more useful there (it also drives the default output name).
+    const metaName = container.meta?.['file_name'] as string | undefined;
     const fileName =
-      (container.meta?.['file_name'] as string | undefined) ?? basename(input).replace(/\.fig$/i, '');
+      metaName && metaName !== 'Untitled' ? metaName : basename(input).replace(/\.(fig|deck)$/i, '');
     lastName = fileName;
 
     const resolver = new VariableResolver(message.nodeChanges ?? []);

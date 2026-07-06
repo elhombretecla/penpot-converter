@@ -8,13 +8,13 @@ const program = new Command();
 
 program
   .name('fig2penpot')
-  .description('Convert Figma .fig files to Penpot .penpot files, locally')
+  .description('Convert Figma .fig files and .deck presentations to Penpot .penpot files, locally')
   .version('0.1.0');
 
 program
   .command('inspect')
-  .description('Decode a .fig file and print a structural report')
-  .argument('<file>', 'path to the .fig file')
+  .description('Decode a .fig/.deck file and print a structural report')
+  .argument('<file>', 'path to the .fig or .deck file')
   .option('--json <path>', 'dump the full decoded node tree as JSON')
   .option('--max-depth <n>', 'prune the JSON tree below this depth', (v) => parseInt(v, 10))
   .action((file: string, opts: { json?: string; maxDepth?: number }) => {
@@ -24,11 +24,11 @@ program
 program
   .command('convert')
   .description(
-    'Convert .fig files to a .penpot file. With several inputs, they are bundled ' +
+    'Convert .fig/.deck files to a .penpot file. With several inputs, they are bundled ' +
       'into one .penpot: earlier files act as shared libraries, and components ' +
       'used across files stay linked (manifest relations + cross-file refs).',
   )
-  .argument('<files...>', 'path(s) to .fig files (libraries first, consumers after)')
+  .argument('<files...>', 'path(s) to .fig/.deck files (libraries first, consumers after)')
   .option('-o, --output <path>', 'output .penpot path (default: <last file name>.penpot)')
   .option(
     '--pages <names>',

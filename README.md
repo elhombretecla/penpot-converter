@@ -1,7 +1,8 @@
 # Penpot Converter
 
-Local CLI that converts Figma `.fig` files ("Save local copy") into Penpot `.penpot` files —
-no browser involved and none of the memory limits of the export plugin.
+Local CLI that converts Figma `.fig` files ("Save local copy") and Figma Slides
+`.deck` presentations into Penpot `.penpot` files — no browser involved and none
+of the memory limits of the export plugin.
 
 ## Quick start
 
@@ -20,6 +21,9 @@ npm install
 In the Figma desktop app or web: **Main menu → File → Save local copy…**
 This downloads a `.fig` file — that is the converter's input. (Components from
 shared team libraries that the file uses are embedded in it automatically.)
+Figma Slides presentations save as `.deck` files the same way, and convert
+the same way: each slide becomes a Penpot board, laid out in the same grid
+as Figma's overview.
 
 ### 3. Convert
 
@@ -48,7 +52,7 @@ npx tsx src/cli.ts convert <files...> [options]
 
 | Option | Description |
 |---|---|
-| `<files...>` | One or more `.fig` files. With several, they are bundled into ONE `.penpot` (see below). |
+| `<files...>` | One or more `.fig`/`.deck` files. With several, they are bundled into ONE `.penpot` (see below). |
 | `-o, --output <path>` | Output file. Default: `<last input's name>.penpot` in the current directory. |
 | `--pages <names>` | Convert only these pages (comma-separated, case-insensitive). Pages hosting components referenced by the selection are pulled in automatically so instance links never break. Single input only. |
 
@@ -71,7 +75,7 @@ much faster than the whole file:
 npx tsx src/cli.ts convert my-design.fig --pages "Checkout,Login" -o preview.penpot
 ```
 
-### `inspect` — look inside a `.fig` without converting
+### `inspect` — look inside a `.fig`/`.deck` without converting
 
 ```bash
 npx tsx src/cli.ts inspect my-design.fig
@@ -142,6 +146,11 @@ into your Penpot, the write pipeline works end to end.
 - Prototype interactions: click/press/hover/enter/leave/after-delay events with
   navigate (+dissolve/slide/push animations), overlay, back and open-url
   actions; component state swaps (SWAP_STATE) have no Penpot equivalent
+
+- Figma Slides (`.deck`): slides → boards at their grid positions (the
+  grid/row/module scaffolding is flattened away), slide backgrounds and theme
+  variables resolved, "shape with text" stickers via their baked geometry,
+  interactive elements (polls, embeds…) as their image snapshot
 
 ## Architecture (src/)
 
