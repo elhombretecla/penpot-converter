@@ -1,5 +1,8 @@
 # Penpot Converter
 
+<img width="2172" height="724" alt="Penpot converter CLI" src="https://github.com/user-attachments/assets/cd0d42d7-665b-4a4a-a6fe-b69127260f1f" />
+
+
 Local CLI that converts Figma `.fig` files ("Save local copy") and Figma Slides
 `.deck` presentations into Penpot `.penpot` files — no browser involved and none
 of the memory limits of the export plugin.
