@@ -6,14 +6,15 @@ of the memory limits of the export plugin.
 
 ## Quick start
 
-**Requirements:** Node.js 22 or newer. Large files (200k+ shapes) need ~4–5 GB of free RAM.
+**Requirements:** Node.js 22 or newer and [pnpm](https://pnpm.io/installation)
+(`npm install -g pnpm`). Large files (200k+ shapes) need ~4–5 GB of free RAM.
 
 ### 1. Install
 
 ```bash
 git clone https://github.com/elhombretecla/penpot-converter.git
 cd penpot-converter
-npm install
+pnpm install
 ```
 
 ### 2. Export your design from Figma
@@ -28,7 +29,7 @@ as Figma's overview.
 ### 3. Convert
 
 ```bash
-npx tsx src/cli.ts convert my-design.fig -o my-design.penpot
+pnpm tsx src/cli.ts convert my-design.fig -o my-design.penpot
 ```
 
 When it finishes it prints a report: shapes converted by type, components,
@@ -47,7 +48,7 @@ That's the whole loop. The sections below cover the extra tools.
 ### `convert` — Figma → Penpot
 
 ```bash
-npx tsx src/cli.ts convert <files...> [options]
+pnpm tsx src/cli.ts convert <files...> [options]
 ```
 
 | Option | Description |
@@ -60,7 +61,7 @@ npx tsx src/cli.ts convert <files...> [options]
 Pass the library files FIRST and the consumer files after — order matters:
 
 ```bash
-npx tsx src/cli.ts convert design-system.fig app.fig -o bundle.penpot
+pnpm tsx src/cli.ts convert design-system.fig app.fig -o bundle.penpot
 ```
 
 Both files land in Penpot in one import: the design system is marked as a
@@ -72,14 +73,14 @@ library component updates the copies, exactly like in Figma.
 much faster than the whole file:
 
 ```bash
-npx tsx src/cli.ts convert my-design.fig --pages "Checkout,Login" -o preview.penpot
+pnpm tsx src/cli.ts convert my-design.fig --pages "Checkout,Login" -o preview.penpot
 ```
 
 ### `inspect` — look inside a `.fig`/`.deck` without converting
 
 ```bash
-npx tsx src/cli.ts inspect my-design.fig
-npx tsx src/cli.ts inspect my-design.fig --json tree.json --max-depth 4
+pnpm tsx src/cli.ts inspect my-design.fig
+pnpm tsx src/cli.ts inspect my-design.fig --json tree.json --max-depth 4
 ```
 
 Prints a structural report (format version, node counts by type, pages,
@@ -89,7 +90,7 @@ decoded node tree for debugging; `--max-depth` prunes it to a readable size.
 ### `hello` — smoke-test your Penpot instance
 
 ```bash
-npx tsx src/cli.ts hello -o hello.penpot
+pnpm tsx src/cli.ts hello -o hello.penpot
 ```
 
 Writes a minimal `.penpot` (a board with two shapes). If this file imports
