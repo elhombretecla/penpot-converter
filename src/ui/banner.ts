@@ -31,7 +31,7 @@ const LOGO = [
 const LOGO_WIDTH = 30;
 
 /** Penpot brand mint (#31efb8), with a plain-cyan fallback for 16-color terminals. */
-function mint(text: string): string {
+export function mint(text: string): string {
   if (pc.isColorSupported && (process.env['COLORTERM'] ?? '').includes('truecolor')) {
     return `\x1b[38;2;49;239;184m${text}\x1b[39m`;
   }

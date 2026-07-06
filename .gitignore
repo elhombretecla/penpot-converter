@@ -2,6 +2,7 @@ node_modules/
 dist/
 out/
 *.log
+.RESEARCH.md
 
 # Local design-file test assets (large, proprietary). Keep your .fig samples
 # here; converter outputs default to out/.

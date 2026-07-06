@@ -52,8 +52,10 @@ Or the scriptable way, as a one-shot command:
 pnpm tsx src/cli.ts convert my-design.fig -o my-design.penpot
 ```
 
-When it finishes it prints a report: shapes converted by type, components,
-design tokens, font substitutions applied, and anything it had to skip.
+While converting, a Penpot-pencil progress bar draws its stroke across the
+terminal (on TTYs only — piped output stays clean). When it finishes it prints
+a report: shapes converted by type, components, design tokens, font
+substitutions applied, and anything it had to skip.
 
 ### 4. Import into Penpot
 

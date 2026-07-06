@@ -1,6 +1,7 @@
 import { readFileSync, createWriteStream } from 'node:fs';
 import { basename } from 'node:path';
 import { Writable } from 'node:stream';
+import pc from 'picocolors';
 import * as penpot from '@penpot/library';
 import { openFig, type FigContainer } from '../fig/container.js';
 import { decodeCanvas, type Guid, type NodeChange } from '../fig/kiwi.js';
@@ -19,6 +20,7 @@ import { rgbToHex, type FigColor } from '../mapper/color.js';
 import { VariableResolver } from '../mapper/variables.js';
 import { appliedTokens, buildTokensLib } from '../mapper/tokens.js';
 import { convertInteractions } from '../mapper/interactions.js';
+import { PencilBar } from '../ui/progress.js';
 
 type ImageResolverFn = (paint: FigPaint) => Record<string, unknown> | undefined;
 
@@ -299,6 +301,11 @@ class Converter {
     missingFonts: new Set(),
     errors: 0,
   };
+
+  /** Called once per real (non-instance-expanded) node visited: progress reporting. */
+  onProgress?: () => void;
+  /** Warning sink; routed through the progress bar while one is drawing. */
+  onWarn: (msg: string) => void = (msg) => console.warn(msg);
 
   /** Active variable modes: variable-set guid key -> mode guid key. */
   private activeModesBySet = new Map<string, string>();
@@ -746,6 +753,7 @@ class Converter {
   }
 
   private visit(entry: FigNode, parentAbs: FigMatrix, parentNode: NodeChange, exp: Expansion | undefined, insideComponent: boolean): void {
+    if (!exp) this.onProgress?.();
     const { node, touched } = this.effectiveNode(entry, exp);
     const src = exp?.source ?? this.main;
     const type = node.type ?? '<none>';
@@ -933,7 +941,7 @@ class Converter {
     } catch (err) {
       this.stats.errors++;
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`error converting "${node.name}" (${type}): ${msg}`);
+      this.onWarn(`error converting "${node.name}" (${type}): ${msg}`);
     } finally {
       popModes?.();
     }
@@ -1566,6 +1574,7 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
   }
 
   const ctx = penpot.createBuildContext();
+  const bar = new PencilBar();
   const registry: FileSource[] = [];
   const converters: Converter[] = [];
   let pages = 0;
@@ -1634,6 +1643,16 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
       collectTargets(canvas);
     }
 
+    // Progress: one tick per real node visited. Descendants of INSTANCE nodes
+    // don't count — conversion expands the SYMBOL's subtree instead of them.
+    const countVisitable = (entry: FigNode): number =>
+      entry.node.type === 'INSTANCE'
+        ? 1
+        : 1 + entry.children.reduce((sum, child) => sum + countVisitable(child), 0);
+    bar.addTotal(ordered.reduce((sum, canvas) => sum + countVisitable(canvas) - 1, 0));
+    converter.onProgress = () => bar.tick();
+    converter.onWarn = (msg) => bar.println(pc.yellow(msg));
+
     for (const canvas of ordered) {
       if (canvas.node.internalOnly && !canvas.children.some(Boolean)) continue;
       converter.convertPage(canvas, canvas.node.internalOnly ? 'External components' : undefined);
@@ -1650,7 +1669,7 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
     converters.push(converter);
 
     if (files.length > 1) {
-      console.log(`file "${fileName}": ${converter.componentCount} components, ${converter.linkedFiles.size} linked libraries`);
+      bar.println(`file "${fileName}": ${converter.componentCount} components, ${converter.linkedFiles.size} linked libraries`);
     }
   }
 
@@ -1662,7 +1681,9 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
     }
   }
 
+  bar.done();
   const output = opts.output ?? `${lastName}.penpot`;
+  if (process.stdout.isTTY) console.log(pc.dim(`writing ${output}…`));
   const out = createWriteStream(output);
   await penpot.exportStream(ctx, Writable.toWeb(out) as WritableStream);
 
