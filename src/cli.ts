@@ -3,13 +3,15 @@ import { Command } from 'commander';
 import { runInspect } from './commands/inspect.js';
 import { runHello } from './commands/hello.js';
 import { runConvert } from './commands/convert.js';
+import { runInteractive } from './commands/interactive.js';
 
+const VERSION = '0.1.0';
 const program = new Command();
 
 program
-  .name('fig2penpot')
+  .name('penpot-converter')
   .description('Convert Figma .fig files and .deck presentations to Penpot .penpot files, locally')
-  .version('0.1.0');
+  .version(VERSION);
 
 program
   .command('inspect')
@@ -47,7 +49,16 @@ program
     await runHello(opts.output);
   });
 
-program.parseAsync().catch((err) => {
+// No arguments: enter the interactive terminal UI (needs a real terminal;
+// piped/CI runs get the regular help text instead).
+const entry =
+  process.argv.length <= 2
+    ? process.stdin.isTTY && process.stdout.isTTY
+      ? runInteractive(VERSION)
+      : Promise.resolve(program.outputHelp() as unknown as void)
+    : program.parseAsync();
+
+entry.catch((err) => {
   console.error(err instanceof Error ? err.message : err);
   process.exit(1);
 });

@@ -17,6 +17,16 @@ cd penpot-converter
 pnpm install
 ```
 
+Optional — make the `penpot-converter` command available from any directory:
+
+```bash
+pnpm setup           # first time only: configures pnpm's global bin dir (then open a new shell)
+pnpm link --global
+```
+
+After that, running `penpot-converter` anywhere opens the interactive UI.
+(The link points at this clone: rerun `pnpm build` after pulling changes.)
+
 ### 2. Export your design from Figma
 
 In the Figma desktop app or web: **Main menu → File → Save local copy…**
@@ -27,6 +37,16 @@ the same way: each slide becomes a Penpot board, laid out in the same grid
 as Figma's overview.
 
 ### 3. Convert
+
+The friendly way — run it with no arguments to enter the interactive terminal
+UI (arrow-key menu, file picker over the `.fig`/`.deck` files it finds around
+you):
+
+```bash
+pnpm dev
+```
+
+Or the scriptable way, as a one-shot command:
 
 ```bash
 pnpm tsx src/cli.ts convert my-design.fig -o my-design.penpot
@@ -44,6 +64,19 @@ prototype interactions arrive ready to use.
 That's the whole loop. The sections below cover the extra tools.
 
 ## Command reference
+
+### Interactive mode (no arguments)
+
+```bash
+pnpm dev                  # from a clone
+penpot-converter          # from anywhere, after `pnpm link --global`
+```
+
+Shows the Penpot banner and an arrow-key menu over the same commands below:
+convert a `.fig`, convert a `.deck`, inspect a file, or write the `hello`
+test file. It lists the `.fig`/`.deck` files found near the current directory
+so you rarely have to type a path. Non-interactive shells (pipes, CI) get the
+regular `--help` instead.
 
 ### `convert` — Figma → Penpot
 
@@ -175,7 +208,8 @@ mapper/            value-level Figma → Penpot translation
   variables.ts     Figma variable resolution (alias chains, mode contexts)
   tokens.ts        variables → DTCG tokens lib + appliedTokens on shapes
   interactions.ts  prototype interactions → Penpot shape interactions
-commands/          CLI subcommands (convert, inspect, hello)
+commands/          CLI subcommands (convert, inspect, hello, interactive)
+ui/banner.ts       ASCII Penpot logo + wordmark for the interactive mode
 ```
 
 Key third-party pieces: `kiwi-schema` (official Kiwi decoder),
