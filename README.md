@@ -150,7 +150,9 @@ into your Penpot, the write pipeline works end to end.
 - Figma Slides (`.deck`): slides → boards at their grid positions (the
   grid/row/module scaffolding is flattened away), slide backgrounds and theme
   variables resolved, "shape with text" stickers via their baked geometry,
-  interactive elements (polls, embeds…) as their image snapshot
+  interactive elements (polls, embeds…) as their image snapshot; speaker notes
+  become a labelled gray text block right under each slide's board (Penpot has
+  no notes concept, so they ride along visually)
 
 ## Architecture (src/)
 

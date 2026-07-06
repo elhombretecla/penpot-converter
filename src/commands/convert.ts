@@ -237,6 +237,34 @@ function sniffMime(bytes: Uint8Array): string {
   return 'image/png';
 }
 
+/**
+ * Slide speaker notes are stored as a serialized Lexical editor state
+ * (root -> block nodes -> inline nodes with a `text` field). Flattens it to
+ * plain text: one line per top-level block, inline text concatenated.
+ * Exported for tests.
+ */
+export function lexicalToPlainText(raw: string): string {
+  interface LexicalNode {
+    text?: unknown;
+    children?: LexicalNode[];
+  }
+  let root: LexicalNode | undefined;
+  try {
+    root = (JSON.parse(raw) as { root?: LexicalNode }).root;
+  } catch {
+    return '';
+  }
+  const inlineText = (node: LexicalNode): string => {
+    if (typeof node.text === 'string') return node.text;
+    return (node.children ?? []).map(inlineText).join('');
+  };
+  return (root?.children ?? [])
+    .map(inlineText)
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /** "Prop1=A, Prop2=B" -> sorted variant properties, per the plugin's parser. */
 function parseVariantName(name: string): { properties: { name: string; value: string }[]; variantName: string } {
   const map = new Map<string, string>();
@@ -786,6 +814,7 @@ class Converter {
           this.visitChildren(entry.children, abs, node, exp, insideComponent || isComponent);
           this.ctx.closeBoard();
           bump(this.stats.converted, isComponent ? 'COMPONENT' : isVariantContainer ? 'VARIANT SET' : type);
+          if (type === 'SLIDE') this.emitSpeakerNotes(node, abs, exp, src);
           break;
         }
         case 'INSTANCE': {
@@ -1348,6 +1377,69 @@ class Converter {
         bump(this.stats.converted, 'SHAPE_WITH_TEXT (text)');
       }
     }
+  }
+
+  /**
+   * Penpot has no speaker-notes concept, so a slide's notes ride along as a
+   * text shape sitting right under its board: same width, an uppercase label
+   * line naming the slide, note text below. The pairing is visual (position +
+   * label), so it survives even if boards are later rearranged by hand.
+   */
+  private emitSpeakerNotes(
+    node: NodeChange,
+    abs: FigMatrix,
+    exp: Expansion | undefined,
+    src: FileSource,
+  ): void {
+    const raw = node['slideSpeakerNotes'];
+    const notes = typeof raw === 'string' && raw ? lexicalToPlainText(raw) : '';
+    if (!notes) return;
+
+    const size = (node['size'] as { x: number; y: number } | undefined) ?? { x: 0, y: 0 };
+    const geom = shapeGeometry(abs, size.x, size.y);
+    const label = `SPEAKER NOTES — ${node.name ?? 'SLIDE'}`;
+    const bodySize = 36;
+    const synthetic: NodeChange = {
+      type: 'TEXT',
+      name: `Speaker notes — ${node.name ?? 'slide'}`,
+      textData: {
+        characters: `${label}\n${notes}`,
+        // Style 1 = the label line (the trailing \n and the notes keep the
+        // node-level default style).
+        characterStyleIDs: Array.from({ length: label.length }, () => 1),
+        styleOverrideTable: [
+          {
+            styleID: 1,
+            fontSize: 26,
+            fontName: { family: 'Inter', style: 'Bold' },
+            letterSpacing: { value: 6, units: 'PERCENT' },
+          },
+        ],
+      },
+      fontSize: bodySize,
+      fontName: { family: 'Inter', style: 'Regular' },
+      lineHeight: { value: 145, units: 'PERCENT' },
+      fillPaints: [
+        { type: 'SOLID', color: { r: 0.45, g: 0.47, b: 0.51, a: 1 }, opacity: 1, visible: true },
+      ],
+      textAutoResize: 'HEIGHT',
+    } as NodeChange;
+
+    const text = convertText(synthetic, this.imageResolverFor(src), this.stats.missingFonts, this.varResolverFor(src));
+    if (!text) return;
+    const lineCount = `${label}\n${notes}`.split('\n').length;
+    this.ctx.addText({
+      name: synthetic.name,
+      x: geom.x,
+      y: geom.y + geom.height + 48,
+      width: geom.width,
+      height: Math.ceil(lineCount * bodySize * 1.45) + 16,
+      growType: text.growType,
+      ...this.nodeIds(node, exp, 'N'),
+      content: text.content,
+      strokes: [],
+    });
+    bump(this.stats.converted, 'SPEAKER NOTES');
   }
 }
 
