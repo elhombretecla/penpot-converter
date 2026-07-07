@@ -62,7 +62,11 @@ export class VariableResolver {
     if (!entry) {
       const setGuid = (variable['variableSetID'] as { guid?: Guid } | undefined)?.guid;
       const set = setGuid ? this.sets.get(guidKey(setGuid)) : undefined;
-      const defaultMode = (set?.['variableSetModes'] as { id?: Guid }[] | undefined)?.[0]?.id;
+      // The default mode is the FIRST BY sortPosition (a fractional index,
+      // byte-comparable), not the first in array order.
+      const modes = [...((set?.['variableSetModes'] as { id?: Guid; sortPosition?: string }[] | undefined) ?? [])];
+      modes.sort((a, b) => ((a.sortPosition ?? '') < (b.sortPosition ?? '') ? -1 : 1));
+      const defaultMode = modes[0]?.id;
       if (defaultMode) {
         entry = entries.find((e) => e.modeID && guidKey(e.modeID) === guidKey(defaultMode));
       }

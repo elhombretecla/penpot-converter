@@ -72,6 +72,31 @@ const BOOL_TYPES: Record<string, string> = {
 /** Node types converted through baked path geometry (fillGeometry/strokeGeometry blobs). */
 const PATH_TYPES = new Set(['VECTOR', 'STAR', 'REGULAR_POLYGON', 'HIGHLIGHT']);
 
+/** Typography fields a shared TEXT style carries (the ones convertText reads). */
+const TEXT_STYLE_FIELDS = [
+  'fontSize',
+  'fontName',
+  'textCase',
+  'textDecoration',
+  'lineHeight',
+  'letterSpacing',
+] as const;
+
+/**
+ * True when an ellipse's arcData describes a partial arc or a ring (donut)
+ * rather than a plain full ellipse: pie slices, donut segments, gauges,
+ * spinners. Those can't be a Penpot circle and must keep their path geometry.
+ */
+function isArcEllipse(node: NodeChange): boolean {
+  const arc = node['arcData'] as
+    | { startingAngle?: number; endingAngle?: number; innerRadius?: number }
+    | undefined;
+  if (!arc) return false;
+  const TAU = Math.PI * 2;
+  const sweep = Math.abs((arc.endingAngle ?? TAU) - (arc.startingAngle ?? 0));
+  return (arc.innerRadius ?? 0) > 1e-3 || Math.abs(sweep - TAU) > 1e-3;
+}
+
 /**
  * Instance-node fields that do NOT represent user overrides of the main
  * component (structure, placement, bookkeeping).
@@ -133,6 +158,8 @@ interface FileSource {
   resolver: VariableResolver;
   tokenNames: ReadonlyMap<string, string>;
   tree: FigTree;
+  /** Shared style definitions (styleType nodes) by guid key. */
+  sharedStyles: Map<string, NodeChange>;
   /** Local symbols by guid key. */
   symbols: Map<string, SymbolInfo>;
   /** Symbols matched into a previously converted file (guid key -> foreign info). */
@@ -700,6 +727,47 @@ class Converter {
     return undefined;
   }
 
+  /**
+   * Resolves shared style references (styleIdForText/Fill/StrokeFill/Effect).
+   * Once a shared style is attached, Figma renders the STYLE node's values and
+   * leaves the node-level fields stale (editing the style does not rewrite its
+   * consumers), so the style definition must override the node's own fields.
+   */
+  private applySharedStyles(node: NodeChange, src: FileSource): NodeChange {
+    if (
+      node['styleIdForText'] === undefined &&
+      node['styleIdForFill'] === undefined &&
+      node['styleIdForStrokeFill'] === undefined &&
+      node['styleIdForEffect'] === undefined
+    ) {
+      return node;
+    }
+
+    const styleNode = (field: string): NodeChange | undefined => {
+      const guid = (node[field] as { guid?: Guid } | undefined)?.guid;
+      return guid ? src.sharedStyles.get(guidKey(guid)) : undefined;
+    };
+
+    let merged: NodeChange | undefined;
+    const put = (fields: Record<string, unknown>): void => {
+      if (Object.keys(fields).length) merged = { ...(merged ?? node), ...fields };
+    };
+
+    const text = styleNode('styleIdForText');
+    if (text) {
+      const pick: Record<string, unknown> = {};
+      for (const f of TEXT_STYLE_FIELDS) if (text[f] !== undefined) pick[f] = text[f];
+      put(pick);
+    }
+    const fill = styleNode('styleIdForFill');
+    if (fill?.['fillPaints']) put({ fillPaints: fill['fillPaints'] });
+    const stroke = styleNode('styleIdForStrokeFill');
+    if (stroke?.['fillPaints']) put({ strokePaints: stroke['fillPaints'] });
+    const effect = styleNode('styleIdForEffect');
+    if (effect?.['effects']) put({ effects: effect['effects'] });
+    return merged ?? node;
+  }
+
   /** Id/shapeRef attributes for a node at the current instance chain. */
   private nodeIds(node: NodeChange, exp: Expansion | undefined, prefix = ''): Record<string, unknown> {
     const gk = node.guid ? guidKey(node.guid) : '0:0';
@@ -754,8 +822,9 @@ class Converter {
 
   private visit(entry: FigNode, parentAbs: FigMatrix, parentNode: NodeChange, exp: Expansion | undefined, insideComponent: boolean): void {
     if (!exp) this.onProgress?.();
-    const { node, touched } = this.effectiveNode(entry, exp);
+    const { node: rawNode, touched } = this.effectiveNode(entry, exp);
     const src = exp?.source ?? this.main;
+    const node = this.applySharedStyles(rawNode, src);
     const type = node.type ?? '<none>';
     const local = (node['transform'] as FigMatrix | undefined) ?? IDENTITY;
     const abs = compose(parentAbs, local);
@@ -844,6 +913,12 @@ class Converter {
           break;
         }
         case 'ELLIPSE': {
+          // Pie/donut/gauge segments are ellipses with arcData; Penpot circles
+          // can't represent them, so those go through the baked path geometry.
+          if (isArcEllipse(node) && this.hasBakedGeometry(node, src)) {
+            this.convertPathNode(node, abs, parentNode, exp, touchedAttr, src, { nativeStrokes: true });
+            break;
+          }
           this.ctx.addCircle({
             ...this.commonAttrs(node, abs, src, parentNode),
             ...this.styleAttrs(node, src),
@@ -1196,6 +1271,18 @@ class Converter {
    * strokeGeometry instead of Penpot stroke attributes. Multiple paths get
    * wrapped in a group carrying the node's identity.
    */
+  /** True if the node carries at least one decodable baked-geometry blob. */
+  private hasBakedGeometry(node: NodeChange, src: FileSource): boolean {
+    for (const field of ['fillGeometry', 'strokeGeometry'] as const) {
+      const geometries = (node[field] as { commandsBlob?: number }[] | undefined) ?? [];
+      for (const geometry of geometries) {
+        if (typeof geometry.commandsBlob !== 'number') continue;
+        if (src.blobs[geometry.commandsBlob]?.bytes?.length) return true;
+      }
+    }
+    return false;
+  }
+
   private convertPathNode(
     node: NodeChange,
     abs: FigMatrix,
@@ -1203,6 +1290,7 @@ class Converter {
     exp: Expansion | undefined,
     touchedAttr: Record<string, unknown>,
     src: FileSource,
+    opts: { nativeStrokes?: boolean } = {},
   ): void {
     const type = node.type ?? 'VECTOR';
 
@@ -1242,7 +1330,16 @@ class Converter {
         : [];
 
     geometrySpecs('fillGeometry', nodeFills);
-    if (strokeFills.length) geometrySpecs('strokeGeometry', strokeFills);
+
+    // Arc ellipses (pie/donut/gauge segments): their baked strokeGeometry is a
+    // self-overlapping tessellation that no fill rule renders correctly, so the
+    // stroke is emitted as a NATIVE Penpot stroke on the fill path instead.
+    let nativeStrokes: unknown[] = [];
+    if (opts.nativeStrokes && specs.length > 0) {
+      if (strokeFills.length) nativeStrokes = convertStrokes(node, resolveImage, resolveVar);
+    } else if (strokeFills.length) {
+      geometrySpecs('strokeGeometry', strokeFills);
+    }
 
     if (specs.length === 0) {
       // Raw vector network (common on children of boolean operations, which
@@ -1280,7 +1377,7 @@ class Converter {
         ...touchedAttr,
         content: specs[0].content,
         fills: specs[0].fills,
-        strokes: [],
+        strokes: nativeStrokes,
         svgAttrs: { fillRule: specs[0].fillRule },
         constraintsH: 'scale',
         constraintsV: 'scale',
@@ -1299,7 +1396,7 @@ class Converter {
           ...this.nodeIds(node, exp, `V${index}`),
           content: spec.content,
           fills: spec.fills,
-          strokes: [],
+          strokes: nativeStrokes,
           svgAttrs: { fillRule: spec.fillRule },
           constraintsH: 'scale',
           constraintsV: 'scale',
@@ -1606,6 +1703,11 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
       resolver,
       tokenNames: tokens.tokenNames,
       tree,
+      sharedStyles: new Map(
+        (message.nodeChanges ?? [])
+          .filter((n) => n.guid && typeof n['styleType'] === 'string')
+          .map((n) => [guidKey(n.guid!), n]),
+      ),
       symbols: new Map(),
       linked: new Map(),
       byQualifiedName: new Map(),
