@@ -1554,6 +1554,23 @@ export interface ConvertOptions {
   pages?: string[];
 }
 
+/**
+ * User-facing page names of a .fig/.deck file, in canvas order. Excludes the
+ * hidden internal-only canvas (external-library component copies), which is not
+ * something a user would pick. Used by the interactive UI's page picker; the
+ * decode is the same first step runConvert does, just without building shapes.
+ */
+export function listPages(file: string): string[] {
+  const raw = readFileSync(file);
+  const container = openFig(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength));
+  const { message } = decodeCanvas(container.schemaBin, container.dataBin);
+  const tree = buildTree(message);
+  return tree.root.children
+    .filter((c) => c.node.type === 'CANVAS' && !c.node.internalOnly)
+    .map((c) => (c.node.name ?? '').trim())
+    .filter(Boolean);
+}
+
 /** Collects every symbol guid referenced anywhere in a subtree (instances, swaps, prop values). */
 function collectSymbolRefs(entry: FigNode, into: Set<string>): void {
   const node = entry.node;

@@ -3,7 +3,7 @@ import pc from 'picocolors';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { renderBanner } from '../ui/banner.js';
-import { runConvert } from './convert.js';
+import { runConvert, listPages } from './convert.js';
 import { runInspect } from './inspect.js';
 import { runHello } from './hello.js';
 
@@ -80,6 +80,47 @@ async function pickFile(extensions: string[], message: string): Promise<string |
   return file;
 }
 
+/**
+ * Lets the user narrow the conversion to specific pages. Returns the chosen
+ * page names, or undefined to convert everything. The `cancelled` flag is how
+ * the caller tells "convert all pages" apart from "user backed out".
+ */
+async function pickPages(file: string): Promise<{ cancelled: boolean; pages?: string[] }> {
+  const spin = p.spinner();
+  spin.start('Reading pages…');
+  let pages: string[];
+  try {
+    pages = listPages(file);
+  } catch (err) {
+    spin.stop('Could not read pages — converting the whole file.');
+    p.log.warn(err instanceof Error ? err.message : String(err));
+    return { cancelled: false };
+  }
+  spin.stop(`${pages.length} page${pages.length === 1 ? '' : 's'} found`);
+
+  // Nothing to choose from: a single (or no) page always converts whole.
+  if (pages.length <= 1) return { cancelled: false };
+
+  const scope = await p.select({
+    message: 'How much of the file?',
+    options: [
+      { value: 'all', label: 'Convert every page', hint: `${pages.length} pages` },
+      { value: 'some', label: 'Pick specific pages…', hint: 'lighter output, faster to review' },
+    ],
+  });
+  if (p.isCancel(scope)) return { cancelled: true };
+  if (scope === 'all') return { cancelled: false };
+
+  const chosen = await p.multiselect({
+    message: 'Select the pages to convert',
+    maxItems: 14,
+    required: true,
+    options: pages.map((name) => ({ value: name, label: name })),
+  });
+  if (p.isCancel(chosen)) return { cancelled: true };
+  return { cancelled: false, pages: chosen };
+}
+
 async function askOutput(defaultPath: string): Promise<string | undefined> {
   const output = await p.text({
     message: 'Output file',
@@ -105,9 +146,11 @@ async function convertFlow(extension: '.fig' | '.deck'): Promise<void> {
   const kind = extension === '.deck' ? 'presentation' : 'design';
   const file = await pickFile([extension], `Which ${kind} do you want to convert?`);
   if (!file) return;
+  const scope = await pickPages(file);
+  if (scope.cancelled) return;
   const output = await askOutput(`${basename(file).replace(/\.(fig|deck)$/i, '')}.penpot`);
   if (!output) return;
-  await runFenced(() => runConvert([file], { output }));
+  await runFenced(() => runConvert([file], { output, ...(scope.pages ? { pages: scope.pages } : {}) }));
 }
 
 async function inspectFlow(): Promise<void> {
