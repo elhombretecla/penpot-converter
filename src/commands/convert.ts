@@ -1,4 +1,4 @@
-import { readFileSync, createWriteStream } from 'node:fs';
+import { readFileSync, createWriteStream, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import { Writable } from 'node:stream';
 import pc from 'picocolors';
@@ -20,7 +20,7 @@ import { rgbToHex, type FigColor } from '../mapper/color.js';
 import { VariableResolver } from '../mapper/variables.js';
 import { appliedTokens, buildTokensLib } from '../mapper/tokens.js';
 import { convertInteractions } from '../mapper/interactions.js';
-import { PencilBar } from '../ui/progress.js';
+import { ByteTicker, PencilBar } from '../ui/progress.js';
 
 type ImageResolverFn = (paint: FigPaint) => Record<string, unknown> | undefined;
 
@@ -238,6 +238,13 @@ interface Expansion {
    * main instance instead.
    */
   swapped: boolean;
+  /**
+   * The expansion belongs to a DETACHED instance: its component's main lives
+   * on a page excluded from this (split) output, so every shapeRef/touched in
+   * the subtree would dangle. Shapes are emitted as plain copies instead —
+   * visually identical, no component linkage.
+   */
+  detached?: boolean;
 }
 
 interface ConvertStats {
@@ -333,6 +340,22 @@ class Converter {
   onProgress?: () => void;
   /** Warning sink; routed through the progress bar while one is drawing. */
   onWarn: (msg: string) => void = (msg) => console.warn(msg);
+  /**
+   * When set (split parts converted without their component closure): symbol
+   * guids whose main lives on a converted page. Instances of any OTHER symbol
+   * are emitted detached — plain shapes, no component linkage — because their
+   * refs would dangle. undefined = every symbol's page is present (default).
+   */
+  availableSymbols?: Set<string>;
+  /**
+   * Latent cross-file links (used with availableSymbols): symbol guid key ->
+   * placeholder Penpot file id of the split part that hosts the symbol's main.
+   * Instances of these symbols are emitted LINKED (shapeRef/componentId as
+   * usual, componentFile = placeholder) instead of detached. The placeholder
+   * survives Penpot's import untouched (only bundled file ids are remapped)
+   * and is rewritten to the library's real post-import id by `relink`.
+   */
+  linkForeign?: Map<string, string>;
 
   /** Active variable modes: variable-set guid key -> mode guid key. */
   private activeModesBySet = new Map<string, string>();
@@ -636,15 +659,20 @@ class Converter {
     );
   }
 
-  convertPage(canvas: FigNode, nameOverride?: string): void {
+  convertPage(canvas: FigNode, nameOverride?: string): string {
     const node = canvas.node;
     const bg = node['backgroundColor'] as FigColor | undefined;
-    this.ctx.addPage({
+    const pageId = this.ctx.addPage({
       name: nameOverride ?? node.name ?? 'Page',
+      // Deterministic like shape ids: the builder's own ids are sequential per
+      // process, which would make page ids drift between runs (the split
+      // machinery re-runs the conversion per part and pages must line up).
+      ...(node.guid ? { id: figmaIdToUuid(this.main.salt + guidKey(node.guid)) } : {}),
       ...(bg ? { background: rgbToHex(bg) } : {}),
     });
     this.visitChildren(canvas.children, IDENTITY, node, undefined, false);
     this.ctx.closePage();
+    return pageId;
   }
 
   /**
@@ -773,6 +801,7 @@ class Converter {
     const gk = node.guid ? guidKey(node.guid) : '0:0';
     const idPath = (exp?.chain ?? '') + gk;
     const id = figmaIdToUuid(prefix + this.main.salt + idPath);
+    if (exp?.detached) return { id };
     if (exp?.swapped) {
       // Below a swap, refs re-base onto the swapped component's own main.
       return { id, shapeRef: figmaIdToUuid(prefix + exp.source.salt + gk) };
@@ -828,7 +857,7 @@ class Converter {
     const type = node.type ?? '<none>';
     const local = (node['transform'] as FigMatrix | undefined) ?? IDENTITY;
     const abs = compose(parentAbs, local);
-    const touchedAttr = touched.length ? { touched } : {};
+    const touchedAttr = touched.length && !exp?.detached ? { touched } : {};
     const popModes = this.pushModes(node);
 
     try {
@@ -1111,6 +1140,26 @@ class Converter {
     );
     const swapped = swappedHere || (exp?.swapped ?? false);
 
+    // Split parts converted without their component closure: a head whose
+    // subtree references the symbol's own main directly needs that main's
+    // page in the output. That's the case for top-level instances, swapped
+    // heads, and ANY head below a swap (the re-based ref convention points
+    // children at the immediate symbol's main). When the page is missing, the
+    // whole expansion is emitted detached — plain shapes, identical visuals.
+    // A plain NESTED head only references shapes inside the outer main's copy
+    // (which exists), so when just its component DEFINITION is missing it
+    // keeps the positional shapeRef but sheds its component identity, exactly
+    // like any non-instance descendant of a copy.
+    const symbolAvailable =
+      this.availableSymbols === undefined || this.availableSymbols.has(guidKey(symbolGuid!));
+    // Latent link: the symbol's main lives in another split part, but the ids
+    // are deterministic across parts (same .fig, same salt), so the head can
+    // stay a real copy pointing at that part's placeholder file id.
+    const linkedForeignFile = symbolAvailable ? undefined : this.linkForeign?.get(guidKey(symbolGuid!));
+    const needsOwnMain = !exp || swappedHere || (exp?.swapped ?? false);
+    const detached = Boolean(exp?.detached) || (needsOwnMain && !symbolAvailable && !linkedForeignFile);
+    const stripComponent = !detached && !symbolAvailable && !linkedForeignFile;
+
     // Root shape: symbol defaults + content overrides + the instance's own
     // placement (visibility, size, transform, layout-child attributes).
     const rootOverrides: Record<string, unknown> = {};
@@ -1239,6 +1288,7 @@ class Converter {
       stack: new Set([...(exp?.stack ?? []), guidKey(symbolGuid!)]),
       swapped,
       propValues,
+      ...(detached ? { detached: true } : {}),
       // The component tree we are about to clone lives in the file that OWNS
       // the component (possibly another file of the bundle).
       source: info.source,
@@ -1250,18 +1300,29 @@ class Converter {
       ...this.styleAttrs(merged, info.source),
       ...convertLayout(merged),
       id: figmaIdToUuid(this.main.salt + pathId),
-      shapeRef: !exp || swappedHere ? info.rootShapeId : positionalRef,
-      componentId: info.componentId,
-      componentFile: info.source.fileId ?? this.ctx.currentFileId,
-      // componentRoot is only legal OUTSIDE other components: Penpot's
-      // referential-integrity check rejects root copies nested inside mains.
-      ...(exp || insideComponent ? {} : { componentRoot: true }),
-      ...(rootTouched.size ? { touched: [...rootTouched] } : {}),
+      ...(detached
+        ? {}
+        : {
+            shapeRef: !exp || swappedHere ? info.rootShapeId : positionalRef,
+            ...(stripComponent
+              ? {}
+              : {
+                  componentId: info.componentId,
+                  componentFile: linkedForeignFile ?? info.source.fileId ?? this.ctx.currentFileId,
+                  // componentRoot is only legal OUTSIDE other components: Penpot's
+                  // referential-integrity check rejects root copies nested inside mains.
+                  ...(exp || insideComponent ? {} : { componentRoot: true }),
+                }),
+            ...(rootTouched.size ? { touched: [...rootTouched] } : {}),
+          }),
       showContent: merged['frameMaskDisabled'] === true,
     });
     this.visitChildren(info.entry.children, abs, merged, childExp, true);
     this.ctx.closeBoard();
-    bump(this.stats.converted, 'INSTANCE');
+    bump(
+      this.stats.converted,
+      detached ? 'INSTANCE (detached)' : linkedForeignFile ? 'INSTANCE (linked foreign)' : 'INSTANCE',
+    );
   }
 
   /**
@@ -1550,8 +1611,69 @@ class Converter {
 
 export interface ConvertOptions {
   output?: string;
+  /**
+   * Penpot file name override (what the file is called once imported).
+   * Defaults to the .fig meta file_name. Single-input conversions only —
+   * in bundles every file would get the same name.
+   */
+  fileName?: string;
+  /**
+   * Mark the output as a shared library, so it can be attached from other
+   * Penpot files right after import. In multi-file bundles the library files
+   * (every input but the last) are marked shared regardless.
+   */
+  shared?: boolean;
   /** Page names to convert (others are dropped, except pages hosting needed components). */
   pages?: string[];
+  /**
+   * Positions in the ordered page list (user pages first, internal canvas
+   * last) to convert. Used by the split machinery, which needs to address
+   * pages unambiguously when names repeat. Mutually exclusive with `pages`.
+   */
+  pageIndexes?: number[];
+  /**
+   * With `pageIndexes`: convert EXACTLY those pages (no component-closure
+   * expansion) and emit instances of components hosted on excluded pages as
+   * detached plain shapes. This is how split parts avoid dragging the whole
+   * design system into every part.
+   */
+  detachForeign?: boolean;
+  /**
+   * With `detachForeign`: latent cross-part links. Symbol guid key ->
+   * placeholder Penpot file id of the split part hosting the symbol's main.
+   * Matching foreign instances are emitted as real linked copies against the
+   * placeholder id instead of detached; after importing every part, the
+   * `relink` command rewrites the placeholders to the real file ids and
+   * creates the library relations.
+   */
+  linkForeign?: Map<string, string>;
+  /**
+   * File-level pluginData ({namespace: {key: "string value"}}), e.g. section
+   * provenance so relink can locate the parts even if they are renamed.
+   */
+  filePluginData?: Record<string, Record<string, string>>;
+  /** One-line completion message instead of the full per-type report. */
+  quiet?: boolean;
+}
+
+export interface PageInfo {
+  /** Position in the ordered page list — stable across runs of the same .fig. */
+  index: number;
+  name: string;
+  /** Penpot page id, as written into the .penpot ZIP paths. */
+  pageId: string;
+  /** The hidden internal canvas ('External components'). */
+  internal: boolean;
+  /** Indexes of every page this one needs to stay self-contained (incl. itself). */
+  closure: number[];
+}
+
+export interface ConvertResult {
+  output: string;
+  /** Size of the written .penpot, in bytes. */
+  bytes: number;
+  /** Converted pages, in output order. Empty for multi-file bundles. */
+  pages: PageInfo[];
 }
 
 /**
@@ -1599,16 +1721,17 @@ function collectSymbolRefs(entry: FigNode, into: Set<string>): void {
   for (const child of entry.children) collectSymbolRefs(child, into);
 }
 
-function filterPages(ordered: FigNode[], pageNames: string[], converter: Converter): FigNode[] {
-  const wanted = new Set(pageNames.map((p) => p.trim().toLowerCase()));
-  const selected = new Set(
-    ordered.filter((c) => wanted.has((c.node.name ?? '').trim().toLowerCase())),
-  );
-  if (selected.size === 0) {
-    throw new Error(`--pages matched no page. Available: ${ordered.map((c) => c.node.name).join(', ')}`);
-  }
-  // Copies only stay linked if the pages hosting their main components are
-  // exported too: chase symbol references transitively and pull those pages in.
+/**
+ * Copies only stay linked if the pages hosting their main components are
+ * exported too: chase symbol references transitively and pull those pages in.
+ * Returns the closure of `selected` (a superset, including `selected` itself).
+ */
+export function computePageClosure(
+  ordered: FigNode[],
+  converter: Converter,
+  selected: ReadonlySet<FigNode>,
+): Set<FigNode> {
+  const closure = new Set(selected);
   const symbolPage = new Map<string, FigNode>();
   for (const canvas of ordered) {
     const collect = (entry: FigNode): void => {
@@ -1624,7 +1747,7 @@ function filterPages(ordered: FigNode[], pageNames: string[], converter: Convert
   const scannedSymbols = new Set<string>();
   for (;;) {
     let grew = false;
-    for (const canvas of [...selected]) {
+    for (const canvas of [...closure]) {
       if (scannedPages.has(canvas)) continue;
       scannedPages.add(canvas);
       collectSymbolRefs(canvas, neededSymbols);
@@ -1639,16 +1762,52 @@ function filterPages(ordered: FigNode[], pageNames: string[], converter: Convert
     }
     for (const gk of neededSymbols) {
       const page = symbolPage.get(gk);
-      if (page && !selected.has(page)) {
-        selected.add(page);
+      if (page && !closure.has(page)) {
+        closure.add(page);
         grew = true;
       }
     }
     if (!grew) break;
   }
-  const filtered = ordered.filter((c) => selected.has(c));
+  return closure;
+}
+
+function filterPages(ordered: FigNode[], pageNames: string[], converter: Converter): FigNode[] {
+  const wanted = new Set(pageNames.map((p) => p.trim().toLowerCase()));
+  const selected = new Set(
+    ordered.filter((c) => wanted.has((c.node.name ?? '').trim().toLowerCase())),
+  );
+  if (selected.size === 0) {
+    throw new Error(`--pages matched no page. Available: ${ordered.map((c) => c.node.name).join(', ')}`);
+  }
+  const closure = computePageClosure(ordered, converter, selected);
+  const filtered = ordered.filter((c) => closure.has(c));
   console.log(`page filter: converting ${filtered.length} pages (${filtered.map((c) => c.node.name).join(', ')})`);
   return filtered;
+}
+
+/**
+ * Page filter by position in `ordered` (user pages first, internal canvas
+ * last — stable across runs of the same .fig). The split planner hands over
+ * index sets that already include each page's closure, so re-running the
+ * closure here is idempotent; it stays as a safety net.
+ */
+function filterPagesByIndex(ordered: FigNode[], indexes: number[], converter: Converter): FigNode[] {
+  const selected = new Set(indexes.filter((i) => i >= 0 && i < ordered.length).map((i) => ordered[i]));
+  if (selected.size === 0) throw new Error('pageIndexes matched no page');
+  const closure = computePageClosure(ordered, converter, selected);
+  return ordered.filter((c) => closure.has(c));
+}
+
+/** Guid keys of every SYMBOL hosted on the given pages. */
+function collectPageSymbols(pages: FigNode[]): Set<string> {
+  const symbols = new Set<string>();
+  const walk = (entry: FigNode): void => {
+    if (entry.node.type === 'SYMBOL' && entry.node.guid) symbols.add(guidKey(entry.node.guid));
+    for (const child of entry.children) walk(child);
+  };
+  for (const page of pages) walk(page);
+  return symbols;
 }
 
 /**
@@ -1677,20 +1836,27 @@ function stripDerivedRenderData(nodes: NodeChange[]): void {
   }
 }
 
-export async function runConvert(inputs: string | string[], opts: ConvertOptions): Promise<void> {
+export async function runConvert(inputs: string | string[], opts: ConvertOptions): Promise<ConvertResult> {
   const files = Array.isArray(inputs) ? inputs : [inputs];
   const started = performance.now();
   resetIdCache();
   appliedFontAliases.clear();
 
-  if (opts.pages?.length && files.length > 1) {
+  if ((opts.pages?.length || opts.pageIndexes?.length) && files.length > 1) {
     throw new Error('--pages is only supported when converting a single .fig file');
+  }
+  if (opts.pages?.length && opts.pageIndexes?.length) {
+    throw new Error('pages and pageIndexes are mutually exclusive');
+  }
+  if (opts.fileName && files.length > 1) {
+    throw new Error('fileName is only supported when converting a single .fig file');
   }
 
   const ctx = penpot.createBuildContext();
   const bar = new PencilBar();
   const registry: FileSource[] = [];
   const converters: Converter[] = [];
+  const pageInfos: PageInfo[] = [];
   let pages = 0;
   let componentCount = 0;
   let tokenCount = 0;
@@ -1708,7 +1874,8 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
     // file name is more useful there (it also drives the default output name).
     const metaName = container.meta?.['file_name'] as string | undefined;
     const fileName =
-      metaName && metaName !== 'Untitled' ? metaName : basename(input).replace(/\.(fig|deck)$/i, '');
+      opts.fileName ??
+      (metaName && metaName !== 'Untitled' ? metaName : basename(input).replace(/\.(fig|deck)$/i, ''));
     lastName = fileName;
 
     const resolver = new VariableResolver(message.nodeChanges ?? []);
@@ -1736,22 +1903,39 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
     converter.indexSymbols();
 
     // Every file but the last is treated as a shared library of the bundle.
-    const isShared = files.length > 1 && index < files.length - 1;
+    const isShared = opts.shared === true || (files.length > 1 && index < files.length - 1);
     // The builder derives file ids from the name, which collides when a bundle
     // repeats names — pin an explicit deterministic id per bundle position.
     source.fileId = ctx.addFile({
       id: uuidV5(`fig2penpot-file-${index}-${fileName}`),
       name: fileName,
       ...(isShared ? { isShared: true } : {}),
+      ...(opts.filePluginData ? { pluginData: opts.filePluginData } : {}),
     });
 
     const canvases = tree.root.children.filter((c) => c.node.type === 'CANVAS');
     // Regular pages first, then the hidden internal canvas (external-library
     // component copies) as an explicit page so instances can link against it.
-    let ordered = [...canvases.filter((c) => !c.node.internalOnly), ...canvases.filter((c) => c.node.internalOnly)];
+    const orderedFull = [
+      ...canvases.filter((c) => !c.node.internalOnly),
+      ...canvases.filter((c) => c.node.internalOnly),
+    ];
+    let ordered = orderedFull;
 
     if (opts.pages?.length) {
       ordered = filterPages(ordered, opts.pages, converter);
+    } else if (opts.pageIndexes?.length) {
+      if (opts.detachForeign) {
+        // Exact page set, no closure: instances of components hosted on the
+        // excluded pages are emitted detached instead of dragging them in.
+        const wanted = new Set(opts.pageIndexes);
+        ordered = orderedFull.filter((_, i) => wanted.has(i));
+        if (ordered.length === 0) throw new Error('pageIndexes matched no page');
+        converter.availableSymbols = collectPageSymbols(ordered);
+        if (opts.linkForeign) converter.linkForeign = opts.linkForeign;
+      } else {
+        ordered = filterPagesByIndex(ordered, opts.pageIndexes, converter);
+      }
     }
 
     for (const canvas of ordered) {
@@ -1772,9 +1956,20 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
     converter.onProgress = () => bar.tick();
     converter.onWarn = (msg) => bar.println(pc.yellow(msg));
 
+    const indexInFull = new Map(orderedFull.map((c, i) => [c, i] as const));
     for (const canvas of ordered) {
       if (canvas.node.internalOnly && !canvas.children.some(Boolean)) continue;
-      converter.convertPage(canvas, canvas.node.internalOnly ? 'External components' : undefined);
+      const pageId = converter.convertPage(canvas, canvas.node.internalOnly ? 'External components' : undefined);
+      if (files.length === 1) {
+        const closure = computePageClosure(orderedFull, converter, new Set([canvas]));
+        pageInfos.push({
+          index: indexInFull.get(canvas)!,
+          name: canvas.node.internalOnly ? 'External components' : (canvas.node.name ?? 'Page'),
+          pageId,
+          internal: Boolean(canvas.node.internalOnly),
+          closure: [...closure].map((c) => indexInFull.get(c)!).sort((a, b) => a - b),
+        });
+      }
       pages++;
     }
 
@@ -1802,9 +1997,15 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
 
   bar.done();
   const output = opts.output ?? `${lastName}.penpot`;
-  if (process.stdout.isTTY) console.log(pc.dim(`writing ${output}…`));
   const out = createWriteStream(output);
-  await penpot.exportStream(ctx, Writable.toWeb(out) as WritableStream);
+  const ticker = new ByteTicker(`writing ${output}…`);
+  ticker.start(() => out.bytesWritten);
+  try {
+    await penpot.exportStream(ctx, Writable.toWeb(out) as WritableStream);
+  } finally {
+    ticker.stop();
+  }
+  const bytes = statSync(output).size;
 
   const elapsed = ((performance.now() - started) / 1000).toFixed(1);
   const stats: ConvertStats = {
@@ -1823,6 +2024,12 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
   }
   const total = [...stats.converted.values()].reduce((a, b) => a + b, 0);
   const totalSkipped = [...stats.skipped.values()].reduce((a, b) => a + b, 0);
+  const result: ConvertResult = { output, bytes, pages: pageInfos };
+
+  if (opts.quiet) {
+    console.log(`wrote ${output} in ${elapsed}s  (${pages} pages, ${total} shapes)`);
+    return result;
+  }
 
   console.log(`\nwrote ${output} in ${elapsed}s  (${registry.length} files, ${pages} pages, ${total} shapes, ${componentCount} components, ${tokenCount} tokens)`);
   console.log('\nconverted:');
@@ -1847,4 +2054,5 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
   }
   if (stats.missingImages) console.log(`\nmissing images: ${stats.missingImages}`);
   if (stats.errors) console.log(`node errors: ${stats.errors}`);
+  return result;
 }

@@ -24,6 +24,21 @@ function round(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
+/**
+ * Figma occasionally bakes degenerate segments with NaN coordinates into
+ * derived geometry (seen in fillGeometry of icon vectors). JSON serializes
+ * NaN as null, which Penpot's import backend rejects with an NPE, so those
+ * segments are dropped — Figma renders them as nothing anyway.
+ */
+function pushSegment(
+  segments: PathSegment[],
+  command: PathSegment['command'],
+  params?: Record<string, number>,
+): void {
+  if (params && !Object.values(params).every(Number.isFinite)) return;
+  segments.push(params ? { command, params } : { command });
+}
+
 interface NetworkVertex {
   x: number;
   y: number;
@@ -123,21 +138,20 @@ export function decodeVectorNetwork(
     const start = vertices[segs[0].v1];
     if (!start) continue;
     const p0 = apply(transform, start);
-    result.push({ command: 'move-to', params: { x: round(p0.x), y: round(p0.y) } });
+    pushSegment(result, 'move-to', { x: round(p0.x), y: round(p0.y) });
     for (const seg of segs) {
       const a = vertices[seg.v1];
       const b = vertices[seg.v2];
       if (!a || !b) continue;
       if (seg.t1x === 0 && seg.t1y === 0 && seg.t2x === 0 && seg.t2y === 0) {
         const p = apply(transform, b);
-        result.push({ command: 'line-to', params: { x: round(p.x), y: round(p.y) } });
+        pushSegment(result, 'line-to', { x: round(p.x), y: round(p.y) });
       } else {
         const c1 = apply(transform, { x: a.x + seg.t1x, y: a.y + seg.t1y });
         const c2 = apply(transform, { x: b.x + seg.t2x, y: b.y + seg.t2y });
         const p = apply(transform, b);
-        result.push({
-          command: 'curve-to',
-          params: { c1x: round(c1.x), c1y: round(c1.y), c2x: round(c2.x), c2y: round(c2.y), x: round(p.x), y: round(p.y) },
+        pushSegment(result, 'curve-to', {
+          c1x: round(c1.x), c1y: round(c1.y), c2x: round(c2.x), c2y: round(c2.y), x: round(p.x), y: round(p.y),
         });
       }
     }
@@ -212,13 +226,13 @@ export function decodePathCommands(bytes: Uint8Array, transform: FigMatrix): Pat
       case 1: {
         current = readPoint();
         const p = apply(transform, current);
-        segments.push({ command: 'move-to', params: { x: round(p.x), y: round(p.y) } });
+        pushSegment(segments, 'move-to', { x: round(p.x), y: round(p.y) });
         break;
       }
       case 2: {
         current = readPoint();
         const p = apply(transform, current);
-        segments.push({ command: 'line-to', params: { x: round(p.x), y: round(p.y) } });
+        pushSegment(segments, 'line-to', { x: round(p.x), y: round(p.y) });
         break;
       }
       case 3: {
@@ -230,9 +244,8 @@ export function decodePathCommands(bytes: Uint8Array, transform: FigMatrix): Pat
         const tc1 = apply(transform, c1);
         const tc2 = apply(transform, c2);
         const tEnd = apply(transform, end);
-        segments.push({
-          command: 'curve-to',
-          params: { c1x: round(tc1.x), c1y: round(tc1.y), c2x: round(tc2.x), c2y: round(tc2.y), x: round(tEnd.x), y: round(tEnd.y) },
+        pushSegment(segments, 'curve-to', {
+          c1x: round(tc1.x), c1y: round(tc1.y), c2x: round(tc2.x), c2y: round(tc2.y), x: round(tEnd.x), y: round(tEnd.y),
         });
         current = end;
         break;
@@ -242,9 +255,8 @@ export function decodePathCommands(bytes: Uint8Array, transform: FigMatrix): Pat
         const c2 = apply(transform, readPoint());
         const end = readPoint();
         const tEnd = apply(transform, end);
-        segments.push({
-          command: 'curve-to',
-          params: { c1x: round(c1.x), c1y: round(c1.y), c2x: round(c2.x), c2y: round(c2.y), x: round(tEnd.x), y: round(tEnd.y) },
+        pushSegment(segments, 'curve-to', {
+          c1x: round(c1.x), c1y: round(c1.y), c2x: round(c2.x), c2y: round(c2.y), x: round(tEnd.x), y: round(tEnd.y),
         });
         current = end;
         break;

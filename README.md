@@ -1,18 +1,52 @@
+<div align="center">
+
 # Penpot Converter
 
 <img width="2172" height="724" alt="Penpot converter CLI" src="https://github.com/user-attachments/assets/cd0d42d7-665b-4a4a-a6fe-b69127260f1f" />
 
+**Move your Figma designs into Penpot — right from your computer, no browser, no size limits.**
 
-Local CLI that converts Figma `.fig` files ("Save local copy") and Figma Slides
-`.deck` presentations into Penpot `.penpot` files — no browser involved and none
-of the memory limits of the export plugin.
+Convert Figma `.fig` files and Figma Slides `.deck` presentations into Penpot `.penpot` files locally. Pages, components, variants, design tokens and prototype interactions all come across, ready to use.
 
-## Quick start
+[![Node](https://img.shields.io/badge/Node.js-%E2%89%A522-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
+[![pnpm](https://img.shields.io/badge/pnpm-package%20manager-f69220?logo=pnpm&logoColor=white)](https://pnpm.io)
+[![License](https://img.shields.io/badge/license-MPL--2.0-blue.svg)](#license)
 
-**Requirements:** Node.js 22 or newer and [pnpm](https://pnpm.io/installation)
-(`npm install -g pnpm`). Large files (200k+ shapes) need ~4–5 GB of free RAM.
+[Quick start](#-quick-start) · [What it does](#-what-it-does) · [The tools](#-the-tools) · [Good to know](#-good-to-know)
 
-### 1. Install
+</div>
+
+---
+
+## 🎯 In one minute
+
+Figma's own "export to Penpot" plugin runs in the browser and chokes on large files. **Penpot Converter does the same job on your machine** — so it handles huge designs (200k+ shapes), keeps your components linked, brings your design tokens along, and never touches the network unless you ask it to.
+
+If you can save a file from Figma and drag a file into Penpot, you can use this. The friendly menu walks you through the rest.
+
+---
+
+## ✨ What it does
+
+| | |
+|---|---|
+| 🖼️ **Converts your designs** | `.fig` files and Figma Slides `.deck` → `.penpot`, with boards, text, images, auto layout, effects and more. |
+| 🧩 **Keeps components linked** | Your design system and the files that use it stay connected — edit a component once, every copy updates. |
+| 🎨 **Brings your tokens** | Figma variables become a real Penpot design-tokens library (colors, spacing, fonts, light/dark themes). |
+| 🔀 **Handles giant files** | Splits an output that's too big to import into smaller pieces you can import one by one. |
+| 🩺 **Checks & repairs** | Validates a `.penpot` for integrity problems and fixes them — locally or on a live Penpot server. |
+| 🖥️ **Friendly or scriptable** | A guided arrow-key menu for people, plain commands for automation and CI. |
+
+---
+
+## 🚀 Quick start
+
+### Before you begin
+
+You'll need **Node.js 22 or newer** and **[pnpm](https://pnpm.io/installation)** (install it with `npm install -g pnpm`).
+Very large files (200k+ shapes) want about **4–5 GB of free RAM**.
+
+### Step 1 — Install it
 
 ```bash
 git clone https://github.com/elhombretecla/penpot-converter.git
@@ -20,180 +54,299 @@ cd penpot-converter
 pnpm install
 ```
 
-Optional — make the `penpot-converter` command available from any directory:
+<details>
+<summary><strong>Optional:</strong> run <code>penpot-converter</code> from any folder</summary>
 
 ```bash
-pnpm setup           # first time only: configures pnpm's global bin dir (then open a new shell)
+pnpm setup            # first time only — sets up pnpm's global bin dir, then open a new shell
 pnpm link --global
 ```
 
-After that, running `penpot-converter` anywhere opens the interactive UI.
-(The link points at this clone: rerun `pnpm build` after pulling changes.)
+After this, typing `penpot-converter` anywhere opens the guided menu.
+The link points at this clone, so run `pnpm build` after you pull updates.
 
-### 2. Export your design from Figma
+</details>
 
-In the Figma desktop app or web: **Main menu → File → Save local copy…**
-This downloads a `.fig` file — that is the converter's input. (Components from
-shared team libraries that the file uses are embedded in it automatically.)
-Figma Slides presentations save as `.deck` files the same way, and convert
-the same way: each slide becomes a Penpot board, laid out in the same grid
-as Figma's overview.
+### Step 2 — Save your design from Figma
 
-### 3. Convert
+In the Figma desktop or web app: **Main menu → File → Save local copy…**
+You get a `.fig` file — that's what the converter reads. Components from shared team libraries are baked into it automatically.
 
-The friendly way — run it with no arguments to enter the interactive terminal
-UI (arrow-key menu, file picker over the `.fig`/`.deck` files it finds around
-you):
+Figma Slides presentations save as `.deck` files the same way, and convert the same way — each slide becomes a Penpot board.
+
+### Step 3 — Convert it
+
+The **easy way** — just run it with no arguments and follow the on-screen menu (arrow keys, a file picker that finds your `.fig`/`.deck` files for you):
 
 ```bash
 pnpm dev
 ```
 
-Or the scriptable way, as a one-shot command:
+The **scriptable way** — a one-line command:
 
 ```bash
 pnpm tsx src/cli.ts convert my-design.fig -o my-design.penpot
 ```
 
-While converting, a Penpot-pencil progress bar draws its stroke across the
-terminal (on TTYs only — piped output stays clean). When it finishes it prints
-a report: shapes converted by type, components, design tokens, font
-substitutions applied, and anything it had to skip.
+A little Penpot-pencil progress bar draws across your terminal while it works, then prints a report of what came over: shapes by type, components, design tokens, font substitutions, and anything it skipped.
 
-### 4. Import into Penpot
+### Step 4 — Import into Penpot
 
-In Penpot, go to a project dashboard and drag the `.penpot` file in
-(or use **+ → Import file**). Pages, components, variants, tokens and
-prototype interactions arrive ready to use.
+In Penpot, open a project and **drag the `.penpot` file in** (or use **+ → Import file**). Done — your pages, components, variants, tokens and interactions are there.
 
-That's the whole loop. The sections below cover the extra tools.
+> That's the whole loop. Everything below is the extra tools you can reach for when you need them.
 
-## Command reference
+---
 
-### Interactive mode (no arguments)
+## 📑 The tools
+
+Jump to what you need:
+
+- [🔄 `convert` — Figma → Penpot](#-convert--figma--penpot)
+- [🖥️ Interactive menu — the guided way](#️-interactive-menu--the-guided-way)
+- [🔍 `inspect` — peek inside a `.fig` file](#-inspect--peek-inside-a-fig-file)
+- [✅ `validate` — check a `.penpot` for problems](#-validate--check-a-penpot-for-problems)
+- [🛠️ `repair` — fix what validate finds](#️-repair--fix-what-validate-finds)
+- [🌐 `repair-remote` — fix a file on a Penpot server](#-repair-remote--fix-a-file-on-a-penpot-server)
+- [🔗 `relink` — reconnect split parts on a server](#-relink--reconnect-split-parts-on-a-server)
+- [📡 `serve` — validate/repair as a web service](#-serve--validaterepair-as-a-web-service)
+- [👋 `hello` — test that Penpot accepts your files](#-hello--test-that-penpot-accepts-your-files)
+
+---
+
+### 🔄 `convert` — Figma → Penpot
+
+**What it's for.** Turning one or more Figma files into a Penpot file. This is the command you'll use 95% of the time.
+
+**Good to know:**
+
+- **One file → one Penpot file.** The simplest case.
+- **Several files → one bundle.** Pass a design-system file **first** and the files that use it **after**. They all land in Penpot in a single import: the design system becomes a shared library, and every component instance stays linked to the real component — just like in Figma.
+- **Only some pages.** Converting a couple of pages and their dependencies is *much* faster than a whole giant file — great for a quick preview.
+- **Too big to import?** Penpot rejects imports over ~120 MiB. `--split` breaks an oversized output into smaller `.penpot` parts you import one at a time.
+
+| Option | What it does |
+|---|---|
+| `<files...>` | One or more `.fig`/`.deck` files. Several → bundled into one `.penpot` (libraries first, consumers after). |
+| `-o, --output <path>` | Where to write the result. Default: the last input's name with a `.penpot` extension. |
+| `--pages <names>` | Convert only these pages (comma-separated). Pages holding components they need come along automatically. Single file only. |
+| `--shared` | Mark the output as a shared library, ready to attach from other Penpot files right after import. |
+| `--split` | If the result is bigger than `--max-size`, split it into self-contained parts. Single file only. |
+| `--max-size <size>` | Size budget per part for `--split`, e.g. `100mb`, `0.5gb`. Default: `100mb`. |
+
+<details>
+<summary>How splitting decides what stays linked (the trade-off)</summary>
+
+`.penpot` files come out larger than the `.fig` they came from — Penpot stores every component instance as real shapes. When the output is too big, `--split` groups pages into parts by weight, and each part keeps as much component linkage as fits its budget:
+
+- **[components linked]** — the pages hosting the components a part uses also fit, so they ride along and every instance stays linked.
+- **[static copies]** — those component pages are too heavy to duplicate (common in design-system files). The part ships its own pages, and instances whose component lives in *another* part are **detached**: pixel-identical shapes without the live link. Components stay editable in whichever part hosts them.
+
+Penpot's importer assigns fresh ids on every import and can't re-link separately imported files, so links can only survive *inside* one `.penpot`. **Import all the parts** — each holds a different subset of your pages.
+
+Prefer a single file? On a self-hosted Penpot you can raise `max-multipart-body-size` (backend) and `client_max_body_size` (nginx) and import the whole thing.
+
+</details>
+
+**In the terminal:**
 
 ```bash
-pnpm dev                  # from a clone
+# The basics — one file in, one Penpot file out
+pnpm tsx src/cli.ts convert my-design.fig -o my-design.penpot
+
+# A design system + a file that uses it (libraries FIRST, consumers AFTER)
+pnpm tsx src/cli.ts convert design-system.fig app.fig -o bundle.penpot
+
+# Just a few pages, for a fast preview
+pnpm tsx src/cli.ts convert my-design.fig --pages "Checkout,Login" -o preview.penpot
+
+# Split an output that's too big to import
+pnpm tsx src/cli.ts convert my-design.fig --split               # parts under 100 MB
+pnpm tsx src/cli.ts convert my-design.fig --split --max-size 80mb
+
+# A Figma Slides deck (each slide becomes a board)
+pnpm tsx src/cli.ts convert my-deck.deck -o slides.penpot
+```
+
+---
+
+### 🖥️ Interactive menu — the guided way
+
+**What it's for.** People who'd rather not remember commands. Run the tool with no arguments and it shows the Penpot logo and an arrow-key menu covering everything above.
+
+**What you get:** menu choices grouped into **Convert** (`.fig`, `.deck`) and **Repair** (reconnect libraries, check & repair locally, repair on a server), plus inspect and a quick test file. File prompts are type-to-filter — they list matching files near you and narrow as you type, with a **"Browse the file system…"** option that walks folders with autocomplete, so you never hand-type a path. Output prompts accept a sensible suggested name with one Enter.
+
+> Running in a pipe or CI (no real terminal)? You get the regular `--help` text instead.
+
+**In the terminal:**
+
+```bash
+pnpm dev                  # from this clone
 penpot-converter          # from anywhere, after `pnpm link --global`
 ```
 
-Shows the Penpot banner and an arrow-key menu over the same commands below:
-convert a `.fig`, convert a `.deck`, inspect a file, or write the `hello`
-test file. It lists the `.fig`/`.deck` files found near the current directory
-so you rarely have to type a path. Non-interactive shells (pipes, CI) get the
-regular `--help` instead.
+---
 
-### `convert` — Figma → Penpot
+### 🔍 `inspect` — peek inside a `.fig` file
 
-```bash
-pnpm tsx src/cli.ts convert <files...> [options]
-```
+**What it's for.** Looking at what a Figma file contains *without* converting it — a quick health check. It prints the format version, how many nodes of each type there are, the page list, and how many components come from external libraries.
 
-| Option | Description |
-|---|---|
-| `<files...>` | One or more `.fig`/`.deck` files. With several, they are bundled into ONE `.penpot` (see below). |
-| `-o, --output <path>` | Output file. Default: `<last input's name>.penpot` in the current directory. |
-| `--pages <names>` | Convert only these pages (comma-separated, case-insensitive). Pages hosting components referenced by the selection are pulled in automatically so instance links never break. Single input only. |
-
-**Converting a design system + files that use it (linked libraries).**
-Pass the library files FIRST and the consumer files after — order matters:
+**In the terminal:**
 
 ```bash
-pnpm tsx src/cli.ts convert design-system.fig app.fig -o bundle.penpot
-```
-
-Both files land in Penpot in one import: the design system is marked as a
-shared library, the app file is linked to it (Assets → Libraries), and every
-instance in the app points at the real component in the library — editing a
-library component updates the copies, exactly like in Figma.
-
-**Fast iteration on big files.** Converting one page and its dependencies is
-much faster than the whole file:
-
-```bash
-pnpm tsx src/cli.ts convert my-design.fig --pages "Checkout,Login" -o preview.penpot
-```
-
-### `inspect` — look inside a `.fig`/`.deck` without converting
-
-```bash
+# Structural report, printed to the screen
 pnpm tsx src/cli.ts inspect my-design.fig
+
+# Dump the full decoded tree to JSON (for debugging), trimmed to a readable depth
 pnpm tsx src/cli.ts inspect my-design.fig --json tree.json --max-depth 4
 ```
 
-Prints a structural report (format version, node counts by type, pages,
-how many components come from external libraries). `--json` dumps the full
-decoded node tree for debugging; `--max-depth` prunes it to a readable size.
+---
 
-### `hello` — smoke-test your Penpot instance
+### ✅ `validate` — check a `.penpot` for problems
+
+**What it's for.** Confirming a `.penpot` file is internally sound before you rely on it. It runs Penpot's own backend integrity checks (parent/child links, frame references, component/copy coherence, variants…) right on your machine and lists any error it finds.
+
+It **exits with an error code** when problems exist, so it slots straight into CI.
+
+**In the terminal:**
+
+```bash
+# Human-readable list of any errors
+pnpm tsx src/cli.ts validate my-file.penpot
+
+# Same thing as JSON (handy for scripts / CI)
+pnpm tsx src/cli.ts validate my-file.penpot --json
+```
+
+---
+
+### 🛠️ `repair` — fix what validate finds
+
+**What it's for.** Automatically fixing the problems `validate` reports. It applies Penpot's own repair logic in a check→fix loop until the file is clean (up to 10 rounds). Anything it can't fix with confidence is reported and left untouched — nothing else is changed.
+
+**In the terminal:**
+
+```bash
+# Repair and write the fixed file
+pnpm tsx src/cli.ts repair broken.penpot -o fixed.penpot
+
+# Just tell me what you'd fix — don't write anything
+pnpm tsx src/cli.ts repair broken.penpot --dry-run
+
+# Cap the number of rounds and get a JSON report
+pnpm tsx src/cli.ts repair broken.penpot --max-iterations 5 --json
+```
+
+---
+
+### 🌐 `repair-remote` — fix a file on a Penpot server
+
+**What it's for.** Repairing a file that already lives in a Penpot instance, over its API — no download/re-upload dance. It fetches the file (and its libraries), runs the same check→fix loop as `repair`, and writes the result back in one atomic step. If the server still rejects the result, nothing is written (unless you pass `--force`).
+
+> **Needs an access token** — pass `--token` or set the `PENPOT_ACCESS_TOKEN` environment variable. You can paste the file's URL straight from your browser.
+
+**In the terminal:**
+
+```bash
+# Preview a repair on a live file (paste the URL from your browser)
+pnpm tsx src/cli.ts repair-remote --url https://design.penpot.app \
+  --file "https://design.penpot.app/#/workspace?team-id=…&file-id=…" --dry-run
+
+# Repair it for real, using a file id
+pnpm tsx src/cli.ts repair-remote --url https://design.penpot.app --file <file-id>
+```
+
+---
+
+### 🔗 `relink` — reconnect split parts on a server
+
+**What it's for.** A follow-up to `convert --split`. After you've imported all the parts into a Penpot project, `relink` turns their cross-part component connections back on: it rewrites the placeholder ids to the real ones Penpot assigned on import and links the parts as libraries of each other.
+
+> **Needs an access token** and the `relink-manifest.json` that conversion produced.
+
+**In the terminal:**
+
+```bash
+# Preview what would be reconnected
+pnpm tsx src/cli.ts relink --url https://design.penpot.app \
+  --project <project-id> --dry-run
+
+# Reconnect for real
+pnpm tsx src/cli.ts relink --url https://design.penpot.app \
+  --project <project-id> --links relink-manifest.json
+```
+
+---
+
+### 📡 `serve` — validate/repair as a web service
+
+**What it's for.** Exposing the same validate/repair over HTTP so you can wire it into a pipeline or another app. Start the server, then POST `.penpot` files to `/validate` or `/repair`.
+
+**In the terminal:**
+
+```bash
+# Start the service (a token makes the POST endpoints require auth; /health stays open)
+pnpm tsx src/cli.ts serve --port 3000 --token my-secret
+
+# Is it up?
+curl http://localhost:3000/health
+
+# Validate a file → JSON report
+curl -X POST -H "Authorization: Bearer my-secret" \
+     --data-binary @broken.penpot http://localhost:3000/validate
+
+# Repair a file → get the repaired .penpot back
+curl -X POST -H "Authorization: Bearer my-secret" \
+     --data-binary @broken.penpot \
+     "http://localhost:3000/repair?maxIterations=10" -o fixed.penpot
+```
+
+---
+
+### 👋 `hello` — test that Penpot accepts your files
+
+**What it's for.** A 10-second sanity check. It writes a minimal `.penpot` (a board with two shapes). If that file imports cleanly into your Penpot, the whole write pipeline works end to end.
+
+**In the terminal:**
 
 ```bash
 pnpm tsx src/cli.ts hello -o hello.penpot
 ```
 
-Writes a minimal `.penpot` (a board with two shapes). If this file imports
-into your Penpot, the write pipeline works end to end.
+---
 
-## Good to know
+## 💡 Good to know
 
-- **Fonts:** text using Google Fonts maps 1:1. Common system fonts are
-  substituted with metric-compatible Google Fonts (Helvetica Neue → Arimo,
-  Georgia → Gelasio, Menlo → JetBrains Mono, …) and every substitution is
-  listed in the report. Other fonts fall back to Penpot's default until you
-  upload them as custom fonts.
-- **Images** are copied byte-for-byte (no re-encoding, no quality loss).
-- **Deterministic ids:** converting the same file twice produces the same
-  internal ids, which is what keeps component links stable across runs and
-  across the files of a bundle.
-- Skipped node types (FigJam widgets, brushes, raw variables already exported
-  as tokens…) are counted in the report — nothing is dropped silently.
+- **Fonts.** Text using Google Fonts maps one-to-one. Common system fonts are swapped for metric-compatible Google Fonts (Helvetica Neue → Arimo, Georgia → Gelasio, Menlo → JetBrains Mono…) and every swap is listed in the report. Anything else falls back to Penpot's default until you upload the font as a custom font.
+- **Images** are copied byte-for-byte — no re-encoding, no quality loss.
+- **Repeatable.** Converting the same file twice produces the same internal ids, which is what keeps component links stable across runs and across a bundle.
+- **Nothing disappears silently.** Node types that have no Penpot equivalent (FigJam widgets, brushes…) are counted in the report so you always know what was skipped.
 
-## What `convert` supports today
+<details>
+<summary><strong>Everything <code>convert</code> brings across today</strong></summary>
 
 - Frames → boards (with content clipping), groups, sections
 - Rectangles (per-corner radii), ellipses, lines
 - Vectors, stars and polygons via Figma's baked path geometry (fill/stroke outlines)
 - Boolean operations (union/difference/intersection/exclude), with plain-group fallback
 - Mask siblings → Penpot masked groups
-- Text with rich per-character styling (font, size, weight, decoration, case,
-  line height, letter spacing), Google Fonts / Penpot font resolution, missing-font report
-- Fills: solid, linear/radial gradients, images (copied as-is, no re-encoding)
+- Text with rich per-character styling (font, size, weight, decoration, case, line height, letter spacing), Google Fonts / Penpot font resolution, missing-font report
+- Fills: solid, linear/radial gradients, images (copied as-is)
 - Strokes (width, alignment, dashes), drop/inner shadows, layer blur
-- Auto layout → flex (direction, gaps, paddings, justify/align, wrap,
-  hug/fill sizing, absolute-positioned children)
+- Auto layout → flex (direction, gaps, paddings, justify/align, wrap, hug/fill sizing, absolute-positioned children)
 - Opacity, blend modes, constraints, rotations, hidden layers
-- Components (components/v2 main instances, deterministic UUID v5 ids), variants
-  (variant containers + properties parsed from "Prop=Value" names)
-- Instances: the component tree is expanded with per-shape `shapeRef` links, user
-  overrides applied (fills, text, visibility…) and translated to Penpot `touched`
-  sync groups; nested component swaps produce swap-slot markers
-- External-library component copies (Figma's hidden internal canvas) are emitted on
-  an "External components" page so their instances stay linked
+- Components and variants (deterministic ids), with instance overrides translated to Penpot `touched` sync groups; nested component swaps produce swap-slot markers
+- External-library component copies emitted on an "External components" page so their instances stay linked
+- Figma variables: resolved for rendering, exported as a DTCG design-tokens library (one set + theme per collection/mode), and kept live on shapes via `appliedTokens`
+- Multi-file bundles: earlier inputs marked as shared libraries, consumers get manifest relations, and instances point at the real component in the library file
+- Prototype interactions: click/press/hover/enter/leave/after-delay events with navigate (+dissolve/slide/push), overlay, back and open-url actions
+- Figma Slides (`.deck`): slides → boards at their grid positions, backgrounds and theme variables resolved, interactive elements as image snapshots, speaker notes as a labelled text block under each board
 
-- Figma variables: resolved for rendering (fills, gradient stops, strokes,
-  shadows honour alias chains and per-subtree light/dark modes), exported as a
-  DTCG design-tokens library (one set + theme per collection/mode), and kept
-  live on shapes via `appliedTokens` (fill, strokeColor, radii, gaps, paddings,
-  sizes, font size/family/weight)
-- System-font aliasing to metric-compatible Google Fonts (Helvetica Neue→Arimo,
-  Georgia→Gelasio, …), reported per conversion
+</details>
 
-- Multi-file bundles: earlier inputs are marked as shared libraries
-  (`isShared`), consumers get manifest `relations`, and instances of external
-  components point at the real component in the library file (matched by
-  qualified name, since .fig files don't carry per-component global keys)
-- Prototype interactions: click/press/hover/enter/leave/after-delay events with
-  navigate (+dissolve/slide/push animations), overlay, back and open-url
-  actions; component state swaps (SWAP_STATE) have no Penpot equivalent
-
-- Figma Slides (`.deck`): slides → boards at their grid positions (the
-  grid/row/module scaffolding is flattened away), slide backgrounds and theme
-  variables resolved, "shape with text" stickers via their baked geometry,
-  interactive elements (polls, embeds…) as their image snapshot; speaker notes
-  become a labelled gray text block right under each slide's board (Penpot has
-  no notes concept, so they ride along visually)
-
-## Architecture (src/)
+<details>
+<summary><strong>Architecture (for contributors)</strong></summary>
 
 ```
 fig/container.ts   opens the .fig (ZIP or bare), splits chunks, inflates (deflate-raw | zstd)
@@ -213,14 +366,23 @@ mapper/            value-level Figma → Penpot translation
   variables.ts     Figma variable resolution (alias chains, mode contexts)
   tokens.ts        variables → DTCG tokens lib + appliedTokens on shapes
   interactions.ts  prototype interactions → Penpot shape interactions
-commands/          CLI subcommands (convert, inspect, hello, interactive)
+repair/            .penpot validation & repair (port of Penpot's backend logic)
+  model.ts         logical .penpot model + the 46-code error catalog
+  io.ts            .penpot ZIP ⇄ model round-trip (ZIP64-safe past 65k entries)
+  helpers.ts       component/tree helpers (swap slots, detach, find-ref-shape…)
+  validate.ts      port of app.common.files.validate (pure, never mutates)
+  repair.ts        port of app.common.files.repair (one handler per error code)
+  runRepair.ts     validate→repair convergence loop (max 10 iterations)
+commands/          CLI subcommands (convert, inspect, validate, repair, serve, hello, interactive)
 ui/banner.ts       ASCII Penpot logo + wordmark for the interactive mode
 ```
 
-Key third-party pieces: `kiwi-schema` (official Kiwi decoder),
-`@penpot/library` (official .penpot builder from the Penpot team),
-`fflate` + `fzstd` (decompression).
+Key third-party pieces: `kiwi-schema` (official Kiwi decoder), `@penpot/library` (official `.penpot` builder from the Penpot team), `fflate` + `fzstd` (decompression).
+
+</details>
+
+---
 
 ## License
 
-MPL-2.0
+[MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/)

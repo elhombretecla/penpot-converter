@@ -6,3 +6,6 @@ out/
 # Local design-file test assets (large, proprietary). Keep your .fig samples
 # here; converter outputs default to out/.
 sample-files/
+
+# Penpot reference sources downloaded during development
+.penpot-ref/
