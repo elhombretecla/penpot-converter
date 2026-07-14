@@ -1995,19 +1995,6 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
     }
   }
 
-  bar.done();
-  const output = opts.output ?? `${lastName}.penpot`;
-  const out = createWriteStream(output);
-  const ticker = new ByteTicker(`writing ${output}…`);
-  ticker.start(() => out.bytesWritten);
-  try {
-    await penpot.exportStream(ctx, Writable.toWeb(out) as WritableStream);
-  } finally {
-    ticker.stop();
-  }
-  const bytes = statSync(output).size;
-
-  const elapsed = ((performance.now() - started) / 1000).toFixed(1);
   const stats: ConvertStats = {
     converted: new Map(),
     skipped: new Map(),
@@ -2022,6 +2009,27 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
     for (const f of converter.stats.missingFonts) stats.missingFonts.add(f);
     stats.errors += converter.stats.errors;
   }
+
+  // The build context now holds copies of everything the export needs
+  // (addFileMedia wraps image bytes in its own Blob), so the source-side
+  // graph — decoded kiwi nodes, trees, image blobs, symbol indexes — is dead
+  // weight. Release it before the export allocates the output ZIP on top.
+  converters.length = 0;
+  registry.length = 0;
+
+  bar.done();
+  const output = opts.output ?? `${lastName}.penpot`;
+  const out = createWriteStream(output);
+  const ticker = new ByteTicker(`writing ${output}…`);
+  ticker.start(() => out.bytesWritten);
+  try {
+    await penpot.exportStream(ctx, Writable.toWeb(out) as WritableStream);
+  } finally {
+    ticker.stop();
+  }
+  const bytes = statSync(output).size;
+
+  const elapsed = ((performance.now() - started) / 1000).toFixed(1);
   const total = [...stats.converted.values()].reduce((a, b) => a + b, 0);
   const totalSkipped = [...stats.skipped.values()].reduce((a, b) => a + b, 0);
   const result: ConvertResult = { output, bytes, pages: pageInfos };
@@ -2031,7 +2039,7 @@ export async function runConvert(inputs: string | string[], opts: ConvertOptions
     return result;
   }
 
-  console.log(`\nwrote ${output} in ${elapsed}s  (${registry.length} files, ${pages} pages, ${total} shapes, ${componentCount} components, ${tokenCount} tokens)`);
+  console.log(`\nwrote ${output} in ${elapsed}s  (${files.length} files, ${pages} pages, ${total} shapes, ${componentCount} components, ${tokenCount} tokens)`);
   console.log('\nconverted:');
   for (const [type, count] of [...stats.converted.entries()].sort((a, b) => b[1] - a[1])) {
     console.log(`  ${type.padEnd(24)} ${count.toLocaleString()}`);

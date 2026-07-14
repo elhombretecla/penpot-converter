@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
+import { totalmem } from 'node:os';
+import { getHeapStatistics } from 'node:v8';
 import { Command } from 'commander';
 import { runInspect } from './commands/inspect.js';
 import { runHello } from './commands/hello.js';
@@ -19,6 +22,32 @@ import { runValidate } from './commands/validate.js';
 import { runRepairCommand } from './commands/repair.js';
 import { runRepairRemote } from './commands/repair-remote.js';
 import { runServe } from './commands/serve.js';
+
+/**
+ * Large .fig files blow past Node's default heap limit (~4 GiB): the decoded
+ * kiwi node graph, the image blobs and the Penpot build context coexist in
+ * memory during a conversion. When the limit is the small default, re-exec
+ * once with --max-old-space-size sized to the machine's RAM. An explicit
+ * --max-old-space-size (NODE_OPTIONS or exec args) is always respected.
+ */
+function ensureHeapHeadroom(): void {
+  if (process.env.FIG2PENPOT_REEXEC) return;
+  const explicit = [...process.execArgv, process.env.NODE_OPTIONS ?? ''].some((arg) =>
+    arg.includes('--max-old-space-size'),
+  );
+  if (explicit) return;
+  const targetMb = Math.floor((totalmem() * 0.75) / (1024 * 1024));
+  const limitMb = getHeapStatistics().heap_size_limit / (1024 * 1024);
+  if (limitMb >= targetMb * 0.9) return;
+  const child = spawnSync(
+    process.execPath,
+    [...process.execArgv, `--max-old-space-size=${targetMb}`, ...process.argv.slice(1)],
+    { stdio: 'inherit', env: { ...process.env, FIG2PENPOT_REEXEC: '1' } },
+  );
+  if (child.error) return; // re-exec unavailable: carry on with the default heap
+  process.exit(child.status ?? 1);
+}
+ensureHeapHeadroom();
 
 const VERSION = '0.1.0';
 const program = new Command();
